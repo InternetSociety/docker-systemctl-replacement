@@ -37349,6 +37349,60 @@ ExecStart=/usr/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELE
         self.assertTrue(greps(out, "KUBELET_KUBECONFIG_ARGS"))
         self.rm_testdir()
         self.coverage()
+    def test_8061_start_postfix_ubuntu(self) -> None:
+        """ postfix on ubuntu does not start"""
+        # this was based on a ";Requires=xy" line in the unit file
+        # but our unit parser did not regard ";" as starting a comment
+        if not os.path.exists(DOCKER_SOCKET): self.skipTest("docker-based test")
+        images = IMAGES
+        image = self.local_image(IMAGE or UBUNTU)
+        if "ubuntu" not in image:
+            if SKIP: self.skipTest("ubuntu-based test")
+        python = os.path.basename(_python)
+        python_x = python_package(_python, image)
+        docker = _docker
+        package = package_tool(image)
+        refresh = refresh_tool(image)
+        testname = self.testname()
+        testdir = self.testdir()
+        systemctl_py = _systemctl_py
+        sometime = SOMETIME or 188
+        cmd = "{docker} rm --force {testname}"
+        sx____(cmd.format(**locals()))
+        cmd = "{docker} run --detach --name={testname} {image} sleep {sometime}"
+        sh____(cmd.format(**locals()))
+        cmd = "{docker} cp {systemctl_py} {testname}:/usr/bin/systemctl"
+        sh____(cmd.format(**locals()))
+        cmd = "{docker} exec {testname} {refresh}"
+        sh____(cmd.format(**locals()))
+        cmd = "{docker} exec {testname} bash -c 'ls -l /usr/bin/{python} || {package} install -y {python_x}'"
+        sh____(cmd.format(**locals()))
+        cmd = "{docker} exec {testname} apt install -y postfix"
+        sh____(cmd.format(**locals()))
+        cmd = "{docker} exec {testname} systemctl --version"
+        sh____(cmd.format(**locals()))
+        cmd = "{docker} exec {testname} systemctl list-unit-files --type=service"
+        sh____(cmd.format(**locals()))
+        out = output(cmd.format(**locals()))
+        self.assertTrue(greps(out, "postfix.service.*enabled"))
+        #
+        cmd = "{docker} exec {testname} systemctl start postfix -vv"
+        sh____(cmd.format(**locals()))
+        #
+        cmd = "{docker} exec {testname} ps -eo pid,ppid,user,args"
+        top = output(cmd.format(**locals()))
+        logg.info("\n>>>\n%s", top)
+        self.assertTrue(greps(top, "/usr/lib/postfix/sbin/master"))
+        #
+        cmd = "{docker} exec {testname} systemctl stop postfix -vv"
+        sh____(cmd.format(**locals()))
+        cmd = "{docker} exec {testname} ps -eo pid,ppid,user,args"
+        top = output(cmd.format(**locals()))
+        logg.info("\n>>>\n%s", top)
+        self.assertFalse(greps(top, "/usr/lib/postfix/sbin/master"))
+        #
+        self.rm_docker(testname)
+        self.rm_testdir()
     def test_9531_centos7_lamp_stack(self) -> None:
         """ Check setup of Linux/Apache/Mariadb/Php on CentOs 7 with python2"""
         if not os.path.exists(DOCKER_SOCKET): self.skipTest("docker-based test")
